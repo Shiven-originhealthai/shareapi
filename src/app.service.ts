@@ -4,7 +4,7 @@ import { Injectable } from '@nestjs/common';
 export class AppService {
   getHello(): {} {
     return  {
-      status:"working hai mc"
+      status:"The api is responding  / images is the main endpoint for response "
     }
   }
 }

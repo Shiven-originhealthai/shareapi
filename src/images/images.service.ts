@@ -4,8 +4,9 @@ import { Request, response } from "express";
  import * as QRCode from 'qrcode';
  import * as otpGenerator from 'otp-generator'
 
-const share_object={}
-const otpValidationResponse={}
+const share_object: Record<string, boolean> = {};
+//const otpValidationResponse={}
+const otpStore: Record<string, string> = {};
 @Injectable()
 export class ImageService {
     constructor(private readonly jwtService:JwtService){}
@@ -13,24 +14,24 @@ export class ImageService {
     generate_share_token(payload : any ): string {
         return this.jwtService.sign(payload);
     }
-    generate_otp_sevice(length:number) : number {
-        return otpGenerator.generate(length,{
+    generate_otp_sevice(length:number, token: string) : string {
+        const otp = otpGenerator.generate(length,{
             digits:true,
-            upperCaseAlphbets:false,
+            upperCaseAlphabets:false,
             lowerCaseAlphabets:false,
             specialChars:false,
         });
-
+        otpStore[token] = otp;
+        console.log(`Generated OTP for token ${token}: ${otp}`);
+        return otp;
     }
     async generateQrCode(data: string): Promise<string> {
        try {
          const qrCodeDataUrl = await QRCode.toDataURL(data, {
            errorCorrectionLevel: 'H', // High error correction for better readability
-           type: 'QrImage/png', // Generate as PNG image
-           quality: 0.9, // Image quality (0.0 - 1.0)
+           type: 'image/png', // Generate as PNG image
            margin: 1, // Margin around the QR code
            width: 300, // Width of the QR code
-           height: 300, // Height of the QR code
          });
          return qrCodeDataUrl;
        } catch (error) {
@@ -43,51 +44,39 @@ export class ImageService {
         cached_data["fetched"] = req.body.arr;
         const share_token = this.generate_share_token(cached_data);
         console.log(share_token);
-        share_object["tokenSent"] = share_token;
+        share_object[share_token] = true;
+        const otp = this.generate_otp_sevice(4, share_token);// Generate and log OTP for this token
+        console.log(`OTP for token ${share_token}: ${otp}`);
         const shareUrl =`http://localhost:3000/share/${share_token}`;
         const qrCodeDataUrlRecieved =  await this.generateQrCode(shareUrl);
-
-        //return {shareUrl : `http://localhost:3001/images/${share_token}`};
         return {
             success:true,
             qrCodeUrl:qrCodeDataUrlRecieved,
-            shareUrl:shareUrl
+            shareUrl:shareUrl,
+            otp // (optional: for demo, remove in production)
          };
     }
     validate(tokenRecieved:string):{}{
-        console.log(share_object["tokenSent"])
-        if(tokenRecieved === share_object["tokenSent"] ){
-            return {
-                response:true
-            }
+        if (share_object[tokenRecieved]) {
+            return { response: true };
+        } else {
+            return { response: false };
         }
-        else{
-            return {
-                    response:false
-            }
-        }
-
     }
 
     validate_otp(req:Request){
-            const recieved_otp:number = req.body.enteredOtp;
-            console.log(typeof(recieved_otp));
-            //const otp_generated = this.generate_otp_sevice(4);
-            //console.log(otp_generated)
-            try{
-                if(recieved_otp === 1234){
-                        otpValidationResponse["validationResonpe"] = true
-                }
-                else{
-                    otpValidationResponse["validationResonpe"] = false
-                }
-
-            }
-            catch{
-
-            }
-            return otpValidationResponse
-
+        const token: string = req.body.token;
+        const recieved_otp: string = req.body.enteredOtp;
+        if(recieved_otp.length > 4){
+            return {response : false, Error:"The otp is too long to process"}
+        }
+        const generated_otp = parseInt(otpStore[token]);
+        console.log(`Verifying OTP for token ${token}: received ${recieved_otp}, expected ${generated_otp}`);
+        if (generated_otp && parseInt(recieved_otp) === generated_otp) {
+            return { response: true };
+        } else {
+            return { response: false , Error:"The OTP is invald Please enter correct otp " };
+        }
     }
 
 }
